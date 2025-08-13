@@ -1,2 +1,7 @@
 .cursor/
 project_goals.md
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+*.egg-info/
