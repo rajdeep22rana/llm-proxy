@@ -15,8 +15,8 @@ class Choice(BaseModel):
     finish_reason: Optional[str] = None
 
 class Usage(BaseModel):
-    input_tokens: int
-    output_tokens: int
+    prompt_tokens: int
+    completion_tokens: int
     total_tokens: int
 
 class ChatResponse(BaseModel):
