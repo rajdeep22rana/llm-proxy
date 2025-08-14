@@ -1,24 +1,15 @@
-from fastapi import APIRouter, Header
-import time
-from app.schemas.chat import ChatRequest, ChatResponse, Message, Choice, Usage
+from fastapi import APIRouter, Header, Depends
+from app.schemas.chat import ChatRequest, ChatResponse
+from app.providers.llm import LLMProvider, get_llm_provider
 
 router = APIRouter(prefix="/proxy", tags=["proxy"])
 
 
 @router.post("/", response_model=ChatResponse)
-async def proxy(request: ChatRequest, authorization: str = Header(...)):
-    # stub implementation
-    resp = ChatResponse(
-        id="stub",
-        object="chat.completion",
-        created=int(time.time()),
-        choices=[
-            Choice(
-                index=0,
-                message=Message(role="assistant", content="stub response"),
-                finish_reason="stop",
-            )
-        ],
-        usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-    )
-    return resp
+async def proxy(
+    request: ChatRequest,
+    authorization: str = Header(...),
+    provider: LLMProvider = Depends(get_llm_provider),
+):
+    """Proxy endpoint that delegates chat requests to an LLM provider"""
+    return await provider.chat(request, authorization)
