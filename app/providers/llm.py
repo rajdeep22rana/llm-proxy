@@ -1,10 +1,6 @@
 from abc import ABC, abstractmethod
 import time
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from app.schemas.chat import ChatRequest, ChatResponse, Choice, Message, Usage
 
 

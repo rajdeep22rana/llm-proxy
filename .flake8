@@ -1,0 +1,8 @@
+# .flake8
+[flake8]
+exclude =
+    .venv,
+    __pycache__,
+    .pytest_cache,
+    llm_proxy.egg-info
+max-line-length = 88
