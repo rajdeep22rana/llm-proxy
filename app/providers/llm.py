@@ -1,5 +1,9 @@
 from abc import ABC, abstractmethod
 import time
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from app.schemas.chat import ChatRequest, ChatResponse, Choice, Message, Usage
 
@@ -28,5 +32,8 @@ class StubProvider(LLMProvider):
 
 
 def get_llm_provider() -> LLMProvider:
-    """Dependency to get the LLM provider (defaults to StubProvider)"""
-    return StubProvider()
+    """Dependency to get the LLM provider based on the LLM_PROVIDER env var."""
+    provider_name = os.getenv("LLM_PROVIDER", "stub").lower()
+    if provider_name == "stub":
+        return StubProvider()
+    raise RuntimeError(f"Unknown LLM_PROVIDER '{provider_name}'.")
