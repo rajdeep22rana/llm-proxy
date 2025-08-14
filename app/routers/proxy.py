@@ -20,8 +20,12 @@ async def proxy(
         if msg.role not in allowed_roles:
             raise HTTPException(status_code=400, detail=f"Invalid role: {msg.role}")
         if not msg.content:
-            raise HTTPException(status_code=400, detail="Message content must not be empty")
+            raise HTTPException(
+                status_code=400, detail="Message content must not be empty"
+            )
     if request.messages[-1].role != "user":
-        raise HTTPException(status_code=400, detail="Last message must be from role \"user\"")
+        raise HTTPException(
+            status_code=400, detail='Last message must be from role "user"'
+        )
 
     return await provider.chat(request, authorization)

@@ -32,9 +32,9 @@ def test_last_message_must_be_user():
         "model": "m",
         "messages": [
             {"role": "user", "content": "hi"},
-            {"role": "assistant", "content": "hello"}
-        ]
+            {"role": "assistant", "content": "hello"},
+        ],
     }
     r = client.post("/proxy", json=payload, headers=headers)
     assert r.status_code == 400
-    assert r.json()["detail"] == "Last message must be from role \"user\""
+    assert r.json()["detail"] == 'Last message must be from role "user"'
