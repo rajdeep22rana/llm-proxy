@@ -1,11 +1,12 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 import time
 from app.schemas.chat import ChatRequest, ChatResponse, Message, Choice, Usage
 
 router = APIRouter(prefix="/proxy", tags=["proxy"])
 
+
 @router.post("/", response_model=ChatResponse)
-async def proxy(request: ChatRequest):
+async def proxy(request: ChatRequest, authorization: str = Header(...)):
     # stub implementation
     resp = ChatResponse(
         id="stub",
@@ -15,9 +16,9 @@ async def proxy(request: ChatRequest):
             Choice(
                 index=0,
                 message=Message(role="assistant", content="stub response"),
-                finish_reason="stop"
+                finish_reason="stop",
             )
         ],
-        usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+        usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
     )
     return resp
