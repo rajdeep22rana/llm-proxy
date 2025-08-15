@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Request
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -46,25 +47,53 @@ async def enforce_max_body_size(request, call_next):
     return await call_next(request)
 
 
-# Simple request ID + metrics middleware
+# Request ID + metrics middleware
 @app.middleware("http")
 async def add_request_id_header(request, call_next):
     start_time = time.perf_counter()
-    response = await call_next(request)
-    end_time = time.perf_counter()
-    duration = end_time - start_time
-
+    # establish request id early so handlers/exception handler can use it
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
-    response.headers["x-request-id"] = request_id
+    request.state.request_id = request_id
 
-    status = str(response.status_code)
+    try:
+        response = await call_next(request)
+        status = str(response.status_code)
+        end_time = time.perf_counter()
+        duration = end_time - start_time
+    except Exception:
+        # record metrics for error path and re-raise
+        status = "500"
+        end_time = time.perf_counter()
+        duration = end_time - start_time
+        method = request.method
+        path = request.url.path
+        http_requests_total.labels(method=method, path=path, status=status).inc()
+        http_request_duration_seconds.labels(
+            method=method, path=path, status=status
+        ).observe(duration)
+        raise
+
+    # success path: record metrics and attach request id header
     method = request.method
     path = request.url.path
     http_requests_total.labels(method=method, path=path, status=status).inc()
     http_request_duration_seconds.labels(
         method=method, path=path, status=status
     ).observe(duration)
+
+    response.headers["x-request-id"] = request_id
     return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Return a consistent JSON error with request_id for traceability."""
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error", "request_id": request_id},
+        headers={"x-request-id": request_id},
+    )
 
 
 @app.get("/metrics")

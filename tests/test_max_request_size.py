@@ -12,7 +12,6 @@ def build_client(monkeypatch, max_bytes: int) -> TestClient:
 
 def test_rejects_large_body(monkeypatch):
     client = build_client(monkeypatch, 5)
-    # 6 bytes content exceeds limit
     headers = {"authorization": "x", "content-length": "6"}
     r = client.post(
         "/proxy",
