@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
 import time
+from collections import deque, defaultdict
+from typing import Deque
 from app.routers.health import router as health_router
 from app.routers.proxy import router as proxy_router
 from app.metrics import (
@@ -83,6 +85,44 @@ async def add_request_id_header(request, call_next):
 
     response.headers["x-request-id"] = request_id
     return response
+
+
+# Optional in-memory rate limiting (disabled by default)
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+}
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60") or 60)
+RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "60") or 60)
+_rate_limit_buckets: dict[str, Deque[float]] = defaultdict(deque)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request, call_next):
+    if not RATE_LIMIT_ENABLED:
+        return await call_next(request)
+
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW_SECONDS
+
+    # Use Authorization header as key if present; else client host or a fallback
+    key = request.headers.get("authorization") or request.client.host or "anonymous"
+    bucket = _rate_limit_buckets[key]
+
+    # Drop timestamps outside the window
+    while bucket and bucket[0] < window_start:
+        bucket.popleft()
+
+    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        # Too many requests
+        resp = Response(status_code=429)
+        # Optional: indicate when to retry (seconds)
+        resp.headers["Retry-After"] = str(RATE_LIMIT_WINDOW_SECONDS)
+        return resp
+
+    bucket.append(now)
+    return await call_next(request)
 
 
 @app.exception_handler(Exception)
