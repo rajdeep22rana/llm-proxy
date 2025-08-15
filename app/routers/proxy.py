@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Header, Depends, HTTPException
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.providers.llm import LLMProvider, get_llm_provider
+from app.providers.registry import resolve_provider_for_model
 
 router = APIRouter(prefix="/proxy", tags=["proxy"])
 
@@ -28,4 +29,14 @@ async def proxy(
             status_code=400, detail='Last message must be from role "user"'
         )
 
-    return await provider.chat(request, authorization)
+    # Allow dependency override to take precedence for tests
+    if (
+        isinstance(provider, LLMProvider)
+        and provider.__class__.__name__ != "StubProvider"
+    ):
+        chosen_provider = provider
+    else:
+        # Choose provider based on model mapping (env MODEL_PROVIDER_MAP) or default
+        chosen_provider = resolve_provider_for_model(request.model)
+
+    return await chosen_provider.chat(request, authorization)
