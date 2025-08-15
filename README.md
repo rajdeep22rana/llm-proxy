@@ -80,6 +80,19 @@ Run the full test suite:
 pytest
 ```
 
+Run formatter, linter, and tests together (recommended for developers):
+
+```bash
+make test-lint
+```
+
+If `make` is unavailable, use the script alternative:
+
+```bash
+chmod +x scripts/test_lint.sh
+./scripts/test_lint.sh
+```
+
 ## Code Style
 
 - Format code: `black .`
