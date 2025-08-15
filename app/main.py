@@ -28,22 +28,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Max request size middleware (bytes). 0 disables the check.
+MAX_REQUEST_BYTES = int(os.getenv("MAX_REQUEST_BYTES", "0") or 0)
 
-# Simple request ID middleware
+
+@app.middleware("http")
+async def enforce_max_body_size(request, call_next):
+    if MAX_REQUEST_BYTES > 0:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_REQUEST_BYTES:
+                    return Response(status_code=413)
+            except ValueError:
+                # If header is malformed, continue to let framework handle
+                pass
+    return await call_next(request)
+
+
+# Simple request ID + metrics middleware
 @app.middleware("http")
 async def add_request_id_header(request, call_next):
     start_time = time.perf_counter()
     response = await call_next(request)
+    end_time = time.perf_counter()
+    duration = end_time - start_time
+
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     response.headers["x-request-id"] = request_id
-    # metrics
+
     status = str(response.status_code)
     method = request.method
     path = request.url.path
     http_requests_total.labels(method=method, path=path, status=status).inc()
     http_request_duration_seconds.labels(
         method=method, path=path, status=status
-    ).observe(time.perf_counter() - start_time)
+    ).observe(duration)
     return response
 
 
