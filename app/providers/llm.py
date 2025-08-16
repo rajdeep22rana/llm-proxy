@@ -1,12 +1,18 @@
 from abc import ABC, abstractmethod
 import time
 import os
+from typing import AsyncGenerator
 from app.schemas.chat import ChatRequest, ChatResponse, Choice, Message, Usage
 
 
 class LLMProvider(ABC):
     @abstractmethod
     async def chat(self, request: ChatRequest, authorization: str) -> ChatResponse: ...
+
+    @abstractmethod
+    async def chat_stream(
+        self, request: ChatRequest, authorization: str
+    ) -> AsyncGenerator[str, None]: ...
 
 
 class StubProvider(LLMProvider):
@@ -25,6 +31,14 @@ class StubProvider(LLMProvider):
             ],
             usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
         )
+
+    async def chat_stream(
+        self, request: ChatRequest, authorization: str
+    ) -> AsyncGenerator[str, None]:
+        # Simple two-part stub stream
+        for part in ["stub ", "response"]:
+            yield part
+        return
 
 
 def get_llm_provider() -> LLMProvider:
