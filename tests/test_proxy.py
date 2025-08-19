@@ -4,7 +4,9 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_proxy_stub():
+def test_proxy_stub(monkeypatch):
+    # Ensure stub provider is used regardless of ambient env
+    monkeypatch.setenv("LLM_PROVIDER", "stub")
     request_payload = {
         "model": "test-model",
         "messages": [{"role": "user", "content": "hello"}],

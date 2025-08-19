@@ -64,10 +64,13 @@ class OpenAICompatibleProvider(LLMProvider):
                      an Authorization header; useful for servers enforcing
                      auth even in local/dev scenarios.
     """
+
     def __init__(self) -> None:
         # Prefer explicit compat var; default is the common Ollama endpoint.
         # We avoid defaulting to OpenAI's public API to prevent accidental costs.
-        self.base_url = os.getenv("OPENAI_COMPAT_BASE_URL", "http://localhost:11434/v1").rstrip("/")
+        self.base_url = os.getenv(
+            "OPENAI_COMPAT_BASE_URL", "http://localhost:11434/v1"
+        ).rstrip("/")
         # Optional key used only if the inbound request did not already include
         # an Authorization header. Many local servers ignore this.
         self.env_api_key = os.getenv("OPENAI_COMPAT_API_KEY")
@@ -106,7 +109,9 @@ class OpenAICompatibleProvider(LLMProvider):
         """
         payload: Dict[str, Any] = {
             "model": request.model,
-            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+            "messages": [
+                {"role": m.role, "content": m.content} for m in request.messages
+            ],
             "stream": False,
         }
         async with httpx.AsyncClient(base_url=self.base_url, timeout=60.0) as client:
@@ -123,7 +128,11 @@ class OpenAICompatibleProvider(LLMProvider):
         choices_raw: List[Dict[str, Any]] = data.get("choices", [])
         if not choices_raw:
             choices_raw = [
-                {"index": 0, "message": {"role": "assistant", "content": ""}, "finish_reason": "stop"}
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": ""},
+                    "finish_reason": "stop",
+                }
             ]
 
         choices: List[Choice] = []
@@ -156,7 +165,9 @@ class OpenAICompatibleProvider(LLMProvider):
             usage=usage,
         )
 
-    async def chat_stream(self, request: ChatRequest, authorization: str) -> AsyncGenerator[str, None]:
+    async def chat_stream(
+        self, request: ChatRequest, authorization: str
+    ) -> AsyncGenerator[str, None]:
         """Stream tokens from the compatible API and yield raw content chunks.
 
         Process:
@@ -174,7 +185,9 @@ class OpenAICompatibleProvider(LLMProvider):
         """
         payload: Dict[str, Any] = {
             "model": request.model,
-            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+            "messages": [
+                {"role": m.role, "content": m.content} for m in request.messages
+            ],
             "stream": True,
         }
         async with httpx.AsyncClient(base_url=self.base_url, timeout=None) as client:
@@ -218,4 +231,3 @@ class OpenAICompatibleProvider(LLMProvider):
                     # handling which we intentionally omit in this generic provider.
                     if content:
                         yield content
-

@@ -1,11 +1,21 @@
 from fastapi import APIRouter, Header, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from app.schemas.chat import ChatRequest, ChatResponse
+from typing import Optional
 from app.providers.base import LLMProvider
-from app.providers.llm import get_llm_provider
 from app.providers.registry import resolve_provider_for_model
 
 router = APIRouter(prefix="/proxy", tags=["proxy"])
+
+
+def get_provider_override() -> Optional[LLMProvider]:
+    """Dependency hook for tests to inject a provider instance.
+
+    In production this returns None so the registry-based resolver is used.
+    Tests can override this dependency to inject custom provider behavior
+    (e.g., raising exceptions) without depending on a specific provider module.
+    """
+    return None
 
 
 def _validate_request(request: ChatRequest):
@@ -29,18 +39,12 @@ def _validate_request(request: ChatRequest):
 async def proxy(
     request: ChatRequest,
     authorization: str = Header(...),
-    provider: LLMProvider = Depends(get_llm_provider),
+    provider: Optional[LLMProvider] = Depends(get_provider_override),
 ):
     """Proxy endpoint that delegates chat requests to an LLM provider"""
     _validate_request(request)
     # Allow dependency override to take precedence for tests
-    if (
-        isinstance(provider, LLMProvider)
-        and provider.__class__.__name__ != "StubProvider"
-    ):
-        chosen_provider = provider
-    else:
-        chosen_provider = resolve_provider_for_model(request.model)
+    chosen_provider = provider or resolve_provider_for_model(request.model)
     return await chosen_provider.chat(request, authorization)
 
 
@@ -48,17 +52,11 @@ async def proxy(
 async def proxy_stream(
     request: ChatRequest,
     authorization: str = Header(...),
-    provider: LLMProvider = Depends(get_llm_provider),
+    provider: Optional[LLMProvider] = Depends(get_provider_override),
 ):
     """Stream chunks from provider as plain text (SSE-friendly)."""
     _validate_request(request)
-    if (
-        isinstance(provider, LLMProvider)
-        and provider.__class__.__name__ != "StubProvider"
-    ):
-        chosen_provider = provider
-    else:
-        chosen_provider = resolve_provider_for_model(request.model)
+    chosen_provider = provider or resolve_provider_for_model(request.model)
 
     async def event_gen():
         async for chunk in chosen_provider.chat_stream(request, authorization):

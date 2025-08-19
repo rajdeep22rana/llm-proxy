@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 from app.main import app
-from app.providers.llm import LLMProvider
+from app.providers.base import LLMProvider
 from app.schemas.chat import ChatRequest, ChatResponse
 
 
@@ -8,12 +8,18 @@ class RaisingProvider(LLMProvider):
     async def chat(self, request: ChatRequest, authorization: str) -> ChatResponse:
         raise RuntimeError("boom")
 
+    async def chat_stream(self, request: ChatRequest, authorization: str):
+        # Satisfy abstract interface; not used in this test
+        raise RuntimeError("boom")
+
 
 def test_unhandled_exception_returns_500_with_request_id(monkeypatch):
     # override the provider dependency to use the raising provider
     from app.routers import proxy as proxy_router
 
-    app.dependency_overrides[proxy_router.get_llm_provider] = lambda: RaisingProvider()
+    app.dependency_overrides[proxy_router.get_provider_override] = (
+        lambda: RaisingProvider()
+    )
 
     client = TestClient(app, raise_server_exceptions=False)
     payload = {"model": "m", "messages": [{"role": "user", "content": "hi"}]}
@@ -30,4 +36,4 @@ def test_unhandled_exception_returns_500_with_request_id(monkeypatch):
         assert body.get("request_id") == rid
     finally:
         # cleanup override
-        app.dependency_overrides.pop(proxy_router.get_llm_provider, None)
+        app.dependency_overrides.pop(proxy_router.get_provider_override, None)

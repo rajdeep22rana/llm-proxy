@@ -27,4 +27,3 @@ class StubProvider(LLMProvider):
         for part in ["stub ", "response"]:
             yield part
         return
-

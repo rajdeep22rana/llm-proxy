@@ -1,17 +1,13 @@
-import pytest
-from app.providers.llm import get_llm_provider, StubProvider
+from app.providers.registry import get_provider_by_name
+from app.providers.stub import StubProvider
 
 
 def test_default_provider(monkeypatch):
-    # Without LLM_PROVIDER env var, should default to StubProvider
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
-    provider = get_llm_provider()
+    provider = get_provider_by_name(None)
     assert isinstance(provider, StubProvider)
 
 
-def test_unknown_provider(monkeypatch):
-    # Unknown provider names should raise RuntimeError
-    monkeypatch.setenv("LLM_PROVIDER", "unknown")
-    with pytest.raises(RuntimeError) as excinfo:
-        get_llm_provider()
-    assert "Unknown LLM_PROVIDER" in str(excinfo.value)
+def test_unknown_provider():
+    provider = get_provider_by_name("unknown")
+    assert isinstance(provider, StubProvider)

@@ -28,7 +28,7 @@ def test_latency_histogram_buckets_present():
 
 def test_metrics_records_500_for_errors():
     # override provider to raise so we produce a 500
-    from app.providers.llm import LLMProvider
+    from app.providers.base import LLMProvider
     from app.schemas.chat import ChatRequest, ChatResponse
     from app.routers import proxy as proxy_router
 
@@ -36,7 +36,13 @@ def test_metrics_records_500_for_errors():
         async def chat(self, request: ChatRequest, authorization: str) -> ChatResponse:
             raise RuntimeError("boom")
 
-    app.dependency_overrides[proxy_router.get_llm_provider] = lambda: RaisingProvider()
+        async def chat_stream(self, request: ChatRequest, authorization: str):
+            # Satisfy abstract interface; not used in this test
+            raise RuntimeError("boom")
+
+    app.dependency_overrides[proxy_router.get_provider_override] = (
+        lambda: RaisingProvider()
+    )
     try:
         error_client = TestClient(app, raise_server_exceptions=False)
         r = error_client.post(
@@ -61,4 +67,4 @@ def test_metrics_records_500_for_errors():
 
         assert has_500_for("/proxy/") or has_500_for("/proxy"), m.text
     finally:
-        app.dependency_overrides.pop(proxy_router.get_llm_provider, None)
+        app.dependency_overrides.pop(proxy_router.get_provider_override, None)

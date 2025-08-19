@@ -22,10 +22,10 @@ def test_resolve_provider_exact_and_wildcard():
 
 
 def test_resolve_provider_for_model_integration(monkeypatch):
-    monkeypatch.setenv("MODEL_PROVIDER_MAP", "gpt-4=openai,foo-*=stub")
+    monkeypatch.setenv("MODEL_PROVIDER_MAP", "gpt-4=ollama,foo-*=stub")
     monkeypatch.setenv("LLM_PROVIDER", "stub")
-    # Currently any name returns StubProvider instance; just ensure it doesn't crash
-    from app.providers.llm import LLMProvider
+    # Ensure resolution returns a provider instance without crashing
+    from app.providers.base import LLMProvider
 
     provider = resolve_provider_for_model("gpt-4")
     assert isinstance(provider, LLMProvider)

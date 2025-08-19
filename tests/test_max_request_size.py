@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 def build_client(monkeypatch, max_bytes: int) -> TestClient:
     monkeypatch.setenv("MAX_REQUEST_BYTES", str(max_bytes))
+    # Force stub provider to avoid outbound HTTP during tests
+    monkeypatch.setenv("LLM_PROVIDER", "stub")
     import app.main as main
 
     importlib.reload(main)

@@ -12,4 +12,3 @@ class LLMProvider(ABC):
     async def chat_stream(
         self, request: ChatRequest, authorization: str
     ) -> AsyncGenerator[str, None]: ...
-
