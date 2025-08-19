@@ -1,6 +1,7 @@
 import os
 from typing import Dict
-from app.providers.llm import StubProvider, LLMProvider
+from app.providers.base import LLMProvider
+from app.providers.stub import StubProvider
 
 # Mapping format example (env MODEL_PROVIDER_MAP):
 # "gpt-4=stub,claude-3=openai,local-*=stub"
@@ -36,7 +37,13 @@ def resolve_provider_name_for_model(model: str, mapping: Dict[str, str]) -> str:
 
 
 def get_provider_by_name(name: str) -> LLMProvider:
-    # For now we only have stub; future: map to OpenAIProvider, etc.
+    name = (name or "stub").lower()
+    if name in {"ollama"}:
+        # Import here to avoid circular imports at module load time
+        from app.providers.openai_compat import OpenAICompatibleProvider
+
+        return OpenAICompatibleProvider()
+    # fallback
     return StubProvider()
 
 

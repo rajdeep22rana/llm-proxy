@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Header, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.providers.llm import LLMProvider, get_llm_provider
+from app.providers.base import LLMProvider
+from app.providers.llm import get_llm_provider
 from app.providers.registry import resolve_provider_for_model
 
 router = APIRouter(prefix="/proxy", tags=["proxy"])
