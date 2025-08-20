@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Response, Request
 from fastapi.responses import JSONResponse
-from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
@@ -15,8 +14,7 @@ from app.middleware.max_body_size import max_body_size_middleware
 from app.middleware.request_id import request_id_and_metrics_middleware
 from app.middleware.logging import request_logging_middleware
 from app.middleware.rate_limit import rate_limit_middleware
-
-load_dotenv()
+from app.providers.base import ProviderModelNotFoundError
 
 app = FastAPI()
 
@@ -56,6 +54,17 @@ async def _rate_limit(request, call_next):
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    # Provide a more precise error for known provider conditions
+    if isinstance(exc, ProviderModelNotFoundError):
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "Model Not Found",
+                "detail": str(exc) or "Requested model is not available",
+                "request_id": request_id,
+            },
+            headers={"x-request-id": request_id},
+        )
     return JSONResponse(
         status_code=500,
         content={"error": "Internal Server Error", "request_id": request_id},

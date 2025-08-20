@@ -6,9 +6,12 @@ from app.providers.openai_compat import OpenAICompatibleProvider
 
 
 class _FakeResponse:
-    def __init__(self, data=None, raise_error: Exception | None = None):
+    def __init__(
+        self, data=None, raise_error: Exception | None = None, status_code: int = 200
+    ):
         self._data = data or {}
         self._raise_error = raise_error
+        self.status_code = status_code
 
     def raise_for_status(self):
         if self._raise_error:
@@ -19,9 +22,12 @@ class _FakeResponse:
 
 
 class _FakeAsyncStreamContext:
-    def __init__(self, lines, raise_error: Exception | None = None):
+    def __init__(
+        self, lines, raise_error: Exception | None = None, status_code: int = 200
+    ):
         self._lines = lines
         self._raise_error = raise_error
+        self.status_code = status_code
 
     async def __aenter__(self):
         if self._raise_error:

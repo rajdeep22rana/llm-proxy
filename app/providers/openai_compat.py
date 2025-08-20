@@ -46,7 +46,7 @@ from typing import AsyncGenerator, Dict, Any, Optional, List
 
 import httpx
 
-from app.providers.base import LLMProvider
+from app.providers.base import LLMProvider, ProviderModelNotFoundError
 from app.schemas.chat import ChatRequest, ChatResponse, Choice, Message, Usage
 
 
@@ -120,6 +120,27 @@ class OpenAICompatibleProvider(LLMProvider):
                 headers=self._headers(authorization),
                 json=payload,
             )
+            # Map a narrow 404 case to a ProviderModelNotFoundError. We only
+            # do this if the downstream body explicitly indicates an unknown
+            # model, to avoid conflating unrelated 404s.
+            if response.status_code == 404:
+                try:
+                    err = response.json()
+                except Exception:
+                    err = {}
+                message = str(err.get("error") or err.get("message") or "")
+                # Common shapes seen across compat servers
+                lower_msg = message.lower()
+                if (
+                    any(
+                        key in lower_msg
+                        for key in ["model", "not found", "unknown model"]
+                    )
+                    and request.model.replace(" ", "") in lower_msg
+                ):
+                    raise ProviderModelNotFoundError(
+                        message or f"Model not found: {request.model}"
+                    )
             response.raise_for_status()
             data: Dict[str, Any] = response.json()
 
@@ -197,6 +218,26 @@ class OpenAICompatibleProvider(LLMProvider):
                 headers=self._headers(authorization),
                 json=payload,
             ) as response:
+                if response.status_code == 404:
+                    # Attempt to parse an explicit unknown-model message
+                    try:
+                        text = await response.aread()
+                        data_str = text.decode("utf-8", errors="ignore")
+                        obj = json.loads(data_str)
+                    except Exception:
+                        obj = {}
+                    message = str(obj.get("error") or obj.get("message") or "")
+                    lower_msg = message.lower()
+                    if (
+                        any(
+                            key in lower_msg
+                            for key in ["model", "not found", "unknown model"]
+                        )
+                        and request.model.replace(" ", "") in lower_msg
+                    ):
+                        raise ProviderModelNotFoundError(
+                            message or f"Model not found: {request.model}"
+                        )
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     # The stream typically emits a sequence of lines, many of which

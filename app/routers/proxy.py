@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Header, Depends, HTTPException
+import logging
 from fastapi.responses import StreamingResponse
 from app.schemas.chat import ChatRequest, ChatResponse
 from typing import Optional
@@ -6,6 +7,7 @@ from app.providers.base import LLMProvider
 from app.providers.registry import resolve_provider_for_model
 
 router = APIRouter(prefix="/proxy", tags=["proxy"])
+logger = logging.getLogger("llm_proxy.proxy")
 
 
 def get_provider_override() -> Optional[LLMProvider]:
@@ -45,6 +47,14 @@ async def proxy(
     _validate_request(request)
     # Allow dependency override to take precedence for tests
     chosen_provider = provider or resolve_provider_for_model(request.model)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "proxy.chat model=%s provider=%s messages=%d has_auth=%s",
+            request.model,
+            type(chosen_provider).__name__,
+            len(request.messages),
+            bool(authorization),
+        )
     return await chosen_provider.chat(request, authorization)
 
 
@@ -57,6 +67,14 @@ async def proxy_stream(
     """Stream chunks from provider as plain text (SSE-friendly)."""
     _validate_request(request)
     chosen_provider = provider or resolve_provider_for_model(request.model)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "proxy.stream model=%s provider=%s messages=%d has_auth=%s",
+            request.model,
+            type(chosen_provider).__name__,
+            len(request.messages),
+            bool(authorization),
+        )
 
     async def event_gen():
         async for chunk in chosen_provider.chat_stream(request, authorization):
