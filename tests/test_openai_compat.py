@@ -222,3 +222,30 @@ def test_base_url_from_env(monkeypatch):
 
     # call a sync part to trigger __init__ but not network
     assert provider.base_url == "http://example.local/api/v1"
+
+
+def test_non_stream_timeout_from_env(monkeypatch):
+    fake_client = _FakeAsyncClient()
+
+    def _client_factory(base_url=None, timeout=None, **kwargs):
+        fake_client.base_url = base_url
+        fake_client.timeout = timeout
+        return fake_client
+
+    monkeypatch.setenv("OPENAI_COMPAT_TIMEOUT_SECONDS", "123.5")
+    monkeypatch.setattr(
+        "app.providers.openai_compat.httpx.AsyncClient", _client_factory
+    )
+    provider = OpenAICompatibleProvider()
+
+    # Exercise chat() enough to instantiate client and pass through timeout
+    import types
+
+    fake_client._next_response = _FakeResponse({"choices": [{}]})
+    req = types.SimpleNamespace(
+        model="m", messages=[types.SimpleNamespace(role="user", content="hi")]
+    )
+    # We don't assert the return; focus on timeout propagation
+    import asyncio
+    asyncio.run(provider.chat(req, authorization="x"))
+    assert fake_client.timeout == 123.5

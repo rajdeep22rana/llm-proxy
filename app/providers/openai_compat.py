@@ -74,6 +74,13 @@ class OpenAICompatibleProvider(LLMProvider):
         # Optional key used only if the inbound request did not already include
         # an Authorization header. Many local servers ignore this.
         self.env_api_key = os.getenv("OPENAI_COMPAT_API_KEY")
+        # Default to a generous timeout for non-streaming requests (seconds)
+        try:
+            self.timeout_seconds = float(
+                os.getenv("OPENAI_COMPAT_TIMEOUT_SECONDS", "600") or 600
+            )
+        except ValueError:
+            self.timeout_seconds = 600.0
 
     def _headers(self, authorization: Optional[str]) -> Dict[str, str]:
         """Construct request headers for the downstream compatible API.
@@ -114,7 +121,9 @@ class OpenAICompatibleProvider(LLMProvider):
             ],
             "stream": False,
         }
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=60.0) as client:
+        async with httpx.AsyncClient(
+            base_url=self.base_url, timeout=self.timeout_seconds
+        ) as client:
             response = await client.post(
                 "/chat/completions",
                 headers=self._headers(authorization),
