@@ -21,19 +21,30 @@ def get_provider_override() -> Optional[LLMProvider]:
 
 
 def _validate_request(request: ChatRequest):
+    # model must be a non-empty string after trimming
+    if not getattr(request, "model", None) or not str(request.model).strip():
+        raise HTTPException(status_code=400, detail="Model must not be empty")
+    # messages must be non-empty
     if not request.messages:
         raise HTTPException(status_code=400, detail="Messages must not be empty")
     allowed_roles = {"system", "user", "assistant"}
+    # normalize and validate each message
     for msg in request.messages:
-        if msg.role not in allowed_roles:
+        role = (msg.role or "").strip().lower()
+        content = (msg.content or "").strip()
+        if role not in allowed_roles:
             raise HTTPException(status_code=400, detail=f"Invalid role: {msg.role}")
-        if not msg.content:
+        if not content:
             raise HTTPException(
                 status_code=400, detail="Message content must not be empty"
             )
-    if request.messages[-1].role != "user":
+        # mutate to normalized values so providers receive trimmed content/role
+        msg.role = role
+        msg.content = content
+    # relaxed final-turn rule: last role must NOT be assistant
+    if request.messages[-1].role == "assistant":
         raise HTTPException(
-            status_code=400, detail='Last message must be from role "user"'
+            status_code=400, detail='Last message must not be from role "assistant"'
         )
 
 

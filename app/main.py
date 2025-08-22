@@ -72,7 +72,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         )
     # Log unhandled exceptions with request correlation for debugging
     logging.getLogger("llm_proxy.errors").exception(
-        "unhandled_exception rid=%s path=%s method=%s", request_id, request.url.path, request.method
+        "unhandled_exception rid=%s path=%s method=%s",
+        request_id,
+        request.url.path,
+        request.method,
     )
     return JSONResponse(
         status_code=500,
