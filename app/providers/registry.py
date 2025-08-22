@@ -38,7 +38,20 @@ def resolve_provider_name_for_model(model: str, mapping: Dict[str, str]) -> str:
 
 def get_provider_by_name(name: str) -> LLMProvider:
     name = (name or "stub").lower()
-    if name in {"ollama"}:
+    # Common aliases for OpenAI-compatible backends
+    openai_compat_aliases = {
+        "ollama",
+        "openai",
+        "openai_compat",
+        "openai-compatible",
+        "compat",
+        "vllm",
+        "localai",
+        "lmstudio",
+        "llamacpp",
+        "llama.cpp",
+    }
+    if name in openai_compat_aliases:
         # Import here to avoid circular imports at module load time
         from app.providers.openai_compat import OpenAICompatibleProvider
 

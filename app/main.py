@@ -19,11 +19,15 @@ from app.providers.base import ProviderModelNotFoundError
 app = FastAPI()
 
 # CORS configuration
-origins = [o for o in os.getenv("CORS_ALLOW_ORIGINS", "*").split(",") if o]
+raw_origins = os.getenv("CORS_ALLOW_ORIGINS", "*")
+origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+# When origins is wildcard, browsers disallow credentials with ACAO "*".
+# Disable credentials in that case to avoid confusing/invalid behavior.
+is_wildcard = len(origins) == 1 and origins[0] == "*"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=not is_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )
