@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Header, Depends, HTTPException
+from fastapi import APIRouter, Header, Depends, HTTPException, Request
 import logging
 from fastapi.responses import StreamingResponse
 from app.schemas.chat import ChatRequest, ChatResponse
 from typing import Optional
 from app.providers.base import LLMProvider
 from app.providers.registry import resolve_provider_for_model
+import json
 
 router = APIRouter(prefix="/proxy", tags=["proxy"])
 logger = logging.getLogger("llm_proxy.proxy")
@@ -74,6 +75,7 @@ async def proxy_stream(
     request: ChatRequest,
     authorization: str = Header(...),
     provider: Optional[LLMProvider] = Depends(get_provider_override),
+    http_request: Request = None,
 ):
     """Stream chunks from provider as plain text (SSE-friendly)."""
     _validate_request(request)
@@ -88,8 +90,24 @@ async def proxy_stream(
         )
 
     async def event_gen():
-        async for chunk in chosen_provider.chat_stream(request, authorization):
-            yield f"data: {chunk}\n\n"
-        yield "data: [DONE]\n\n"
+        try:
+            async for chunk in chosen_provider.chat_stream(request, authorization):
+                yield f"data: {chunk}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            # Log and emit an SSE error payload followed by DONE so clients can
+            # close gracefully
+            rid = (
+                getattr(http_request.state, "request_id", "-") if http_request else "-"
+            )
+            logger.exception(
+                "proxy.stream error rid=%s model=%s: %s",
+                rid,
+                request.model,
+                str(exc),
+            )
+            err = {"error": "stream_error", "message": str(exc), "request_id": rid}
+            yield f"data: {json.dumps(err)}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")

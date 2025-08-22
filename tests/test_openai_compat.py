@@ -247,5 +247,6 @@ def test_non_stream_timeout_from_env(monkeypatch):
     )
     # We don't assert the return; focus on timeout propagation
     import asyncio
+
     asyncio.run(provider.chat(req, authorization="x"))
     assert fake_client.timeout == 123.5
