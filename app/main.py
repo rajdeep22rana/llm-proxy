@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
+import logging
 from app.routers.health import router as health_router
 from app.routers.proxy import router as proxy_router
 from app.metrics import (
@@ -69,6 +70,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
             },
             headers={"x-request-id": request_id},
         )
+    # Log unhandled exceptions with request correlation for debugging
+    logging.getLogger("llm_proxy.errors").exception(
+        "unhandled_exception rid=%s path=%s method=%s", request_id, request.url.path, request.method
+    )
     return JSONResponse(
         status_code=500,
         content={"error": "Internal Server Error", "request_id": request_id},
