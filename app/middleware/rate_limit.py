@@ -1,5 +1,6 @@
 import os
 import time
+import hashlib
 from collections import deque, defaultdict
 from typing import Deque
 from fastapi import Response
@@ -48,11 +49,14 @@ async def rate_limit_middleware(request, call_next):
     window_start = now - RATE_LIMIT_WINDOW_SECONDS
     # Periodically cleanup old entries and empty buckets
     _maybe_cleanup(now, RATE_LIMIT_WINDOW_SECONDS)
-    key = (
+    raw_key = (
         request.headers.get("authorization")
         or (request.client.host if request.client else None)
         or "anonymous"
     )
+    # Hash the key to avoid storing secrets (e.g., API keys) in memory
+    key_material = str(raw_key).encode("utf-8", errors="ignore")
+    key = hashlib.sha256(key_material).hexdigest()
     bucket = _rate_limit_buckets[key]
     while bucket and bucket[0] < window_start:
         bucket.popleft()
