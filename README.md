@@ -108,7 +108,7 @@ uvicorn app.main:app --reload --env-file .env
     - `messages` must be non-empty
     - Allowed roles: `system`, `user`, `assistant`
     - Each message must have non-empty `content`
-    - Last message must be from role `user`
+    - Last message must not be from role `assistant` (system last is allowed)
   - Response: OpenAI-style `ChatResponse` with `choices` and `usage`.
 
 - `POST /proxy/stream` (requires `Authorization` header):

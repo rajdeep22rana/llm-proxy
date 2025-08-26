@@ -121,6 +121,28 @@ class OpenAICompatibleProvider(LLMProvider):
             ],
             "stream": False,
         }
+        # Forward optional OpenAI-compatible parameters if present
+        temperature = getattr(request, "temperature", None)
+        if temperature is not None:
+            payload["temperature"] = temperature
+        top_p = getattr(request, "top_p", None)
+        if top_p is not None:
+            payload["top_p"] = top_p
+        max_tokens = getattr(request, "max_tokens", None)
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        frequency_penalty = getattr(request, "frequency_penalty", None)
+        if frequency_penalty is not None:
+            payload["frequency_penalty"] = frequency_penalty
+        presence_penalty = getattr(request, "presence_penalty", None)
+        if presence_penalty is not None:
+            payload["presence_penalty"] = presence_penalty
+        stop = getattr(request, "stop", None)
+        if stop is not None:
+            payload["stop"] = stop
+        n = getattr(request, "n", None)
+        if n is not None:
+            payload["n"] = n
         async with httpx.AsyncClient(
             base_url=self.base_url, timeout=self.timeout_seconds
         ) as client:
@@ -220,6 +242,28 @@ class OpenAICompatibleProvider(LLMProvider):
             ],
             "stream": True,
         }
+        # Forward optional OpenAI-compatible parameters if present
+        temperature = getattr(request, "temperature", None)
+        if temperature is not None:
+            payload["temperature"] = temperature
+        top_p = getattr(request, "top_p", None)
+        if top_p is not None:
+            payload["top_p"] = top_p
+        max_tokens = getattr(request, "max_tokens", None)
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        frequency_penalty = getattr(request, "frequency_penalty", None)
+        if frequency_penalty is not None:
+            payload["frequency_penalty"] = frequency_penalty
+        presence_penalty = getattr(request, "presence_penalty", None)
+        if presence_penalty is not None:
+            payload["presence_penalty"] = presence_penalty
+        stop = getattr(request, "stop", None)
+        if stop is not None:
+            payload["stop"] = stop
+        n = getattr(request, "n", None)
+        if n is not None:
+            payload["n"] = n
         async with httpx.AsyncClient(base_url=self.base_url, timeout=None) as client:
             async with client.stream(
                 "POST",

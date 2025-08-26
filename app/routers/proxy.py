@@ -47,6 +47,29 @@ def _validate_request(request: ChatRequest):
         raise HTTPException(
             status_code=400, detail='Last message must not be from role "assistant"'
         )
+    # Validate optional OpenAI-compatible parameters if provided
+    if request.temperature is not None and not (0.0 <= request.temperature <= 2.0):
+        raise HTTPException(
+            status_code=400, detail="temperature must be between 0 and 2"
+        )
+    if request.top_p is not None and not (0.0 <= request.top_p <= 1.0):
+        raise HTTPException(status_code=400, detail="top_p must be between 0 and 1")
+    if request.max_tokens is not None and request.max_tokens <= 0:
+        raise HTTPException(status_code=400, detail="max_tokens must be positive")
+    if request.frequency_penalty is not None and not (
+        -2.0 <= request.frequency_penalty <= 2.0
+    ):
+        raise HTTPException(
+            status_code=400, detail="frequency_penalty must be between -2 and 2"
+        )
+    if request.presence_penalty is not None and not (
+        -2.0 <= request.presence_penalty <= 2.0
+    ):
+        raise HTTPException(
+            status_code=400, detail="presence_penalty must be between -2 and 2"
+        )
+    if request.n is not None and request.n <= 0:
+        raise HTTPException(status_code=400, detail="n must be positive")
 
 
 @router.post("/", response_model=ChatResponse)
