@@ -54,6 +54,9 @@ MODEL_PROVIDER_MAP=
 # Defaults base URL to http://localhost:11434/v1 (common for Ollama).
 OPENAI_COMPAT_BASE_URL=http://localhost:11434/v1
 OPENAI_COMPAT_API_KEY=
+# Optional API key authentication for proxy (before provider handling)
+API_KEY_AUTH_ENABLED=false
+API_KEYS= # comma-separated keys, e.g. "key1,key2"
 
 # CORS allowed origins (comma-separated). Defaults to *
 CORS_ALLOW_ORIGINS=*

@@ -16,6 +16,7 @@ from app.middleware.max_body_size import max_body_size_middleware
 from app.middleware.request_id import request_id_and_metrics_middleware
 from app.middleware.logging import request_logging_middleware
 from app.middleware.rate_limit import rate_limit_middleware
+from app.middleware.auth_api_key import api_key_auth_middleware
 from app.providers.base import ProviderModelNotFoundError
 
 app = FastAPI()
@@ -56,6 +57,12 @@ async def _request_logging(request, call_next):
 @app.middleware("http")
 async def _rate_limit(request, call_next):
     return await rate_limit_middleware(request, call_next)
+
+
+@app.middleware("http")
+async def _api_key_auth(request, call_next):
+    # Place auth after request id so 401s include x-request-id, and before providers
+    return await api_key_auth_middleware(request, call_next)
 
 
 # Global exception handler
