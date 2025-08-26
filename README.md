@@ -82,7 +82,18 @@ uvicorn app.main:app --reload --env-file .env
 
 ## API
 
-- `GET /healthz` → `{ "status": "ok" }`
+- `GET /healthz` → returns server health details, for example:
+
+  ```json
+  {
+    "status": "ok",
+    "uptime_seconds": 12.34,
+    "version": "1.0",
+    "rate_limit": { "enabled": false, "window_seconds": 60, "max_requests": 60 },
+    "logging": { "enabled": false, "level": "INFO" },
+    "cors": { "allow_origins": ["*"] }
+  }
+  ```
 
 - `POST /proxy` (requires `Authorization` header):
 

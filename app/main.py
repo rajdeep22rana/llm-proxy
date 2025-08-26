@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
 import logging
+import time
 from app.routers.health import router as health_router
 from app.routers.proxy import router as proxy_router
 from app.metrics import (
@@ -18,6 +19,8 @@ from app.middleware.rate_limit import rate_limit_middleware
 from app.providers.base import ProviderModelNotFoundError
 
 app = FastAPI()
+# Record process start time for health/uptime reporting
+app.state.start_time = time.time()
 
 # CORS configuration
 raw_origins = os.getenv("CORS_ALLOW_ORIGINS", "*")
