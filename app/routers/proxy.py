@@ -6,6 +6,8 @@ from typing import Optional
 from app.providers.base import LLMProvider
 from app.providers.registry import resolve_provider_for_model
 import json
+import time
+from app.metrics import provider_requests_total, provider_request_duration_seconds
 
 router = APIRouter(prefix="/proxy", tags=["proxy"])
 logger = logging.getLogger("llm_proxy.proxy")
@@ -90,7 +92,24 @@ async def proxy(
             len(request.messages),
             bool(authorization),
         )
-    return await chosen_provider.chat(request, authorization)
+    provider_name = type(chosen_provider).__name__
+    operation = "chat"
+    start = time.perf_counter()
+    outcome = "success"
+    try:
+        result = await chosen_provider.chat(request, authorization)
+        return result
+    except Exception:
+        outcome = "error"
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        provider_requests_total.labels(
+            provider=provider_name, operation=operation, outcome=outcome
+        ).inc()
+        provider_request_duration_seconds.labels(
+            provider=provider_name, operation=operation, outcome=outcome
+        ).observe(duration)
 
 
 @router.post("/stream")
@@ -112,12 +131,18 @@ async def proxy_stream(
             bool(authorization),
         )
 
+    provider_name = type(chosen_provider).__name__
+    operation = "chat_stream"
+
     async def event_gen():
+        start = time.perf_counter()
+        outcome = "success"
         try:
             async for chunk in chosen_provider.chat_stream(request, authorization):
                 yield f"data: {chunk}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as exc:
+            outcome = "error"
             # Log and emit an SSE error payload followed by DONE so clients can
             # close gracefully
             rid = (
@@ -132,5 +157,13 @@ async def proxy_stream(
             err = {"error": "stream_error", "message": str(exc), "request_id": rid}
             yield f"data: {json.dumps(err)}\n\n"
             yield "data: [DONE]\n\n"
+        finally:
+            duration = time.perf_counter() - start
+            provider_requests_total.labels(
+                provider=provider_name, operation=operation, outcome=outcome
+            ).inc()
+            provider_request_duration_seconds.labels(
+                provider=provider_name, operation=operation, outcome=outcome
+            ).observe(duration)
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
