@@ -17,7 +17,12 @@ from app.middleware.request_id import request_id_and_metrics_middleware
 from app.middleware.logging import request_logging_middleware
 from app.middleware.rate_limit import rate_limit_middleware
 from app.middleware.auth_api_key import api_key_auth_middleware
-from app.providers.base import ProviderModelNotFoundError
+from app.providers.base import (
+    ProviderModelNotFoundError,
+    ProviderUnauthorizedError,
+    ProviderForbiddenError,
+    ProviderRateLimitError,
+)
 
 app = FastAPI()
 # Record process start time for health/uptime reporting
@@ -79,6 +84,40 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
                 "request_id": request_id,
             },
             headers={"x-request-id": request_id},
+        )
+    if isinstance(exc, ProviderUnauthorizedError):
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "Unauthorized",
+                "detail": str(exc) or "Authentication with provider failed",
+                "request_id": request_id,
+            },
+            headers={"x-request-id": request_id, "WWW-Authenticate": "Bearer"},
+        )
+    if isinstance(exc, ProviderForbiddenError):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "Forbidden",
+                "detail": str(exc) or "Access to provider is forbidden",
+                "request_id": request_id,
+            },
+            headers={"x-request-id": request_id},
+        )
+    if isinstance(exc, ProviderRateLimitError):
+        headers = {"x-request-id": request_id}
+        # Include Retry-After when available
+        if getattr(exc, "retry_after_seconds", None):
+            headers["Retry-After"] = str(exc.retry_after_seconds)
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "Rate Limited",
+                "detail": str(exc) or "Provider rate limit exceeded",
+                "request_id": request_id,
+            },
+            headers=headers,
         )
     # Log unhandled exceptions with request correlation for debugging
     logging.getLogger("llm_proxy.errors").exception(

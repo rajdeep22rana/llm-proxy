@@ -16,6 +16,25 @@ class ProviderModelNotFoundError(ProviderError):
     """Raised when the requested model is not available on the provider side."""
 
 
+class ProviderUnauthorizedError(ProviderError):
+    """Raised when the provider indicates the caller is unauthorized (401)."""
+
+
+class ProviderForbiddenError(ProviderError):
+    """Raised when the provider forbids access (403)."""
+
+
+class ProviderRateLimitError(ProviderError):
+    """Raised when the provider rate limits the request (429).
+
+    Optionally carries a Retry-After value (seconds).
+    """
+
+    def __init__(self, message: str = "", retry_after_seconds: int | None = None):
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
+
 class LLMProvider(ABC):
     @abstractmethod
     async def chat(self, request: ChatRequest, authorization: str) -> ChatResponse: ...

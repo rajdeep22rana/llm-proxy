@@ -143,6 +143,10 @@ The proxy chooses a provider per request model:
 - Unhandled exceptions return `500` with `{"error":"Internal Server Error","request_id":<id>}` and include `x-request-id` header.
 - If the downstream compatible server indicates an unknown model, the proxy returns `404` with `{"error":"Model Not Found", ...}`.
 - Every response includes an `x-request-id` header (generated or propagated from inbound `x-request-id`).
+- Provider errors are mapped:
+  - 401 → `{ "error": "Unauthorized" }` (WWW-Authenticate: Bearer)
+  - 403 → `{ "error": "Forbidden" }`
+  - 429 → `{ "error": "Rate Limited" }` with `Retry-After` when available
 
 ## CORS
 

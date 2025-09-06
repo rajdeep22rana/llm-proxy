@@ -46,7 +46,13 @@ from typing import AsyncGenerator, Dict, Any, Optional, List
 
 import httpx
 
-from app.providers.base import LLMProvider, ProviderModelNotFoundError
+from app.providers.base import (
+    LLMProvider,
+    ProviderModelNotFoundError,
+    ProviderUnauthorizedError,
+    ProviderForbiddenError,
+    ProviderRateLimitError,
+)
 from app.schemas.chat import ChatRequest, ChatResponse, Choice, Message, Usage
 
 
@@ -151,6 +157,24 @@ class OpenAICompatibleProvider(LLMProvider):
                 headers=self._headers(authorization),
                 json=payload,
             )
+            # Map common auth/rate-limit errors explicitly before raise_for_status
+            if response.status_code in (401, 403, 429):
+                try:
+                    err = response.json()
+                except Exception:
+                    err = {}
+                message = str(err.get("error") or err.get("message") or "")
+                if response.status_code == 401:
+                    raise ProviderUnauthorizedError(message or "Unauthorized")
+                if response.status_code == 403:
+                    raise ProviderForbiddenError(message or "Forbidden")
+                if response.status_code == 429:
+                    retry_after = None
+                    try:
+                        retry_after = int(response.headers.get("Retry-After"))
+                    except Exception:
+                        retry_after = None
+                    raise ProviderRateLimitError(message or "Rate Limited", retry_after_seconds=retry_after)
             # Map a narrow 404 case to a ProviderModelNotFoundError. We only
             # do this if the downstream body explicitly indicates an unknown
             # model, to avoid conflating unrelated 404s.
@@ -271,6 +295,27 @@ class OpenAICompatibleProvider(LLMProvider):
                 headers=self._headers(authorization),
                 json=payload,
             ) as response:
+                if response.status_code in (401, 403, 429):
+                    # read body to extract message if available
+                    try:
+                        text = await response.aread()
+                        data_str = text.decode("utf-8", errors="ignore")
+                        obj = json.loads(data_str)
+                    except Exception:
+                        obj = {}
+                    message = str(obj.get("error") or obj.get("message") or "")
+                    if response.status_code == 401:
+                        raise ProviderUnauthorizedError(message or "Unauthorized")
+                    if response.status_code == 403:
+                        raise ProviderForbiddenError(message or "Forbidden")
+                    if response.status_code == 429:
+                        retry_after = None
+                        # httpx stream response may not expose headers; attempt to access
+                        try:
+                            retry_after = int(response.headers.get("Retry-After"))
+                        except Exception:
+                            retry_after = None
+                        raise ProviderRateLimitError(message or "Rate Limited", retry_after_seconds=retry_after)
                 if response.status_code == 404:
                     # Attempt to parse an explicit unknown-model message
                     try:
