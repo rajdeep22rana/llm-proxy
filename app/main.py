@@ -5,6 +5,7 @@ import os
 import uuid
 import logging
 import time
+from contextlib import asynccontextmanager
 from app.routers.health import router as health_router
 from app.routers.proxy import router as proxy_router
 from app.metrics import (
@@ -23,8 +24,17 @@ from app.providers.base import (
     ProviderForbiddenError,
     ProviderRateLimitError,
 )
+from app.providers.registry import close_all_providers
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        yield
+    finally:
+        await close_all_providers()
+
+
+app = FastAPI(lifespan=lifespan)
 # Record process start time for health/uptime reporting
 app.state.start_time = time.time()
 

@@ -36,6 +36,9 @@ def resolve_provider_name_for_model(model: str, mapping: Dict[str, str]) -> str:
     return os.getenv("LLM_PROVIDER", "stub").lower()
 
 
+_provider_cache: Dict[str, LLMProvider] = {}
+
+
 def get_provider_by_name(name: str) -> LLMProvider:
     name = (name or "stub").lower()
     # Common aliases for OpenAI-compatible backends
@@ -55,12 +58,31 @@ def get_provider_by_name(name: str) -> LLMProvider:
         # Import here to avoid circular imports at module load time
         from app.providers.openai_compat import OpenAICompatibleProvider
 
-        return OpenAICompatibleProvider()
+        # Cache provider instances by normalized name to enable connection reuse
+        if name not in _provider_cache:
+            _provider_cache[name] = OpenAICompatibleProvider()
+        return _provider_cache[name]
     # fallback
-    return StubProvider()
+    if name not in _provider_cache:
+        _provider_cache[name] = StubProvider()
+    return _provider_cache[name]
 
 
 def resolve_provider_for_model(model: str) -> LLMProvider:
     mapping = parse_model_provider_map(os.getenv("MODEL_PROVIDER_MAP"))
     provider_name = resolve_provider_name_for_model(model, mapping)
     return get_provider_by_name(provider_name)
+
+
+async def close_all_providers() -> None:
+    """Close any provider resources (e.g., shared HTTP clients) on shutdown."""
+    # Import type locally to avoid circular import for optional methods
+    for provider in list(_provider_cache.values()):
+        # Providers may optionally expose an async `aclose()`
+        aclose = getattr(provider, "aclose", None)
+        if callable(aclose):
+            try:
+                await aclose()  # type: ignore[misc]
+            except Exception:
+                # Best-effort cleanup; avoid raising during shutdown
+                pass

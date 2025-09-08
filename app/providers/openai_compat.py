@@ -81,12 +81,16 @@ class OpenAICompatibleProvider(LLMProvider):
         # an Authorization header. Many local servers ignore this.
         self.env_api_key = os.getenv("OPENAI_COMPAT_API_KEY")
         # Default to a generous timeout for non-streaming requests (seconds)
-        try:
-            self.timeout_seconds = float(
-                os.getenv("OPENAI_COMPAT_TIMEOUT_SECONDS", "600") or 600
-            )
-        except ValueError:
-            self.timeout_seconds = 600.0
+        self.timeout_seconds = float(os.getenv("OPENAI_COMPAT_TIMEOUT_SECONDS", "600"))
+        # Create a shared async client with connection pooling for reuse across calls
+        # Limits can be tuned via env; provide sensible defaults
+        max_connections = int(os.getenv("OPENAI_COMPAT_MAX_CONNECTIONS", "100") or 100)
+        max_keepalive = int(os.getenv("OPENAI_COMPAT_MAX_KEEPALIVE", "20") or 20)
+        self._limits = httpx.Limits(
+            max_connections=max_connections, max_keepalive_connections=max_keepalive
+        )
+        # Note: Separate timeout handling is used per-call for stream vs non-stream
+        self._client = httpx.AsyncClient(base_url=self.base_url, limits=self._limits)
 
     def _headers(self, authorization: Optional[str]) -> Dict[str, str]:
         """Construct request headers for the downstream compatible API.
@@ -149,20 +153,18 @@ class OpenAICompatibleProvider(LLMProvider):
         n = getattr(request, "n", None)
         if n is not None:
             payload["n"] = n
-        async with httpx.AsyncClient(
-            base_url=self.base_url, timeout=self.timeout_seconds
-        ) as client:
-            response = await client.post(
+        response = await self._client.post(
                 "/chat/completions",
                 headers=self._headers(authorization),
                 json=payload,
-            )
-            # Map common auth/rate-limit errors explicitly before raise_for_status
-            if response.status_code in (401, 403, 429):
-                try:
-                    err = response.json()
-                except Exception:
-                    err = {}
+                timeout=self.timeout_seconds,
+        )
+        # Map common auth/rate-limit errors explicitly before raise_for_status
+        if response.status_code in (401, 403, 429):
+            try:
+                err = response.json()
+            except Exception:
+                err = {}
                 message = str(err.get("error") or err.get("message") or "")
                 if response.status_code == 401:
                     raise ProviderUnauthorizedError(message or "Unauthorized")
@@ -288,12 +290,15 @@ class OpenAICompatibleProvider(LLMProvider):
         n = getattr(request, "n", None)
         if n is not None:
             payload["n"] = n
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=None) as client:
-            async with client.stream(
+        # For streaming, set explicit connect + read timeouts; no total timeout
+        stream_connect = float(os.getenv("OPENAI_COMPAT_STREAM_CONNECT_TIMEOUT", "10") or 10)
+        stream_read = float(os.getenv("OPENAI_COMPAT_STREAM_READ_TIMEOUT", "120") or 120)
+        async with self._client.stream(
                 "POST",
                 "/chat/completions",
                 headers=self._headers(authorization),
                 json=payload,
+                timeout=httpx.Timeout(connect=stream_connect, read=stream_read, write=None, pool=None),
             ) as response:
                 if response.status_code in (401, 403, 429):
                     # read body to extract message if available
@@ -370,3 +375,10 @@ class OpenAICompatibleProvider(LLMProvider):
                     # handling which we intentionally omit in this generic provider.
                     if content:
                         yield content
+
+    async def aclose(self) -> None:
+        """Close the shared HTTP client."""
+        try:
+            await self._client.aclose()
+        except Exception:
+            pass
