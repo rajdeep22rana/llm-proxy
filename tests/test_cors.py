@@ -14,13 +14,11 @@ def build_client(monkeypatch, origins: str) -> TestClient:
 def test_preflight_allows_configured_origin(monkeypatch):
     origin = "http://example.com"
     client = build_client(monkeypatch, origin)
-    r = client.options(
-        "/proxy",
-        headers={
-            "Origin": origin,
-            "Access-Control-Request-Method": "POST",
-        },
-    )
+    headers = {
+        "Origin": origin,
+        "Access-Control-Request-Method": "POST",
+    }
+    r = client.options("/proxy", headers=headers)
     assert r.status_code in (200, 204)
     assert r.headers.get("access-control-allow-origin") == origin
 

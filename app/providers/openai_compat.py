@@ -48,6 +48,7 @@ import httpx
 
 from app.providers.base import (
     LLMProvider,
+    ProviderError,
     ProviderModelNotFoundError,
     ProviderUnauthorizedError,
     ProviderForbiddenError,
@@ -90,7 +91,11 @@ class OpenAICompatibleProvider(LLMProvider):
             max_connections=max_connections, max_keepalive_connections=max_keepalive
         )
         # Note: Separate timeout handling is used per-call for stream vs non-stream
-        self._client = httpx.AsyncClient(base_url=self.base_url, limits=self._limits)
+        self._client = httpx.AsyncClient(
+            base_url=self.base_url,
+            limits=self._limits,
+            timeout=self.timeout_seconds,
+        )
 
     def _headers(self, authorization: Optional[str]) -> Dict[str, str]:
         """Construct request headers for the downstream compatible API.
@@ -154,52 +159,59 @@ class OpenAICompatibleProvider(LLMProvider):
         if n is not None:
             payload["n"] = n
         response = await self._client.post(
-                "/chat/completions",
-                headers=self._headers(authorization),
-                json=payload,
-                timeout=self.timeout_seconds,
+            "/chat/completions",
+            headers=self._headers(authorization),
+            json=payload,
+            timeout=self.timeout_seconds,
         )
+
         # Map common auth/rate-limit errors explicitly before raise_for_status
         if response.status_code in (401, 403, 429):
             try:
                 err = response.json()
             except Exception:
                 err = {}
-                message = str(err.get("error") or err.get("message") or "")
-                if response.status_code == 401:
-                    raise ProviderUnauthorizedError(message or "Unauthorized")
-                if response.status_code == 403:
-                    raise ProviderForbiddenError(message or "Forbidden")
-                if response.status_code == 429:
-                    retry_after = None
-                    try:
-                        retry_after = int(response.headers.get("Retry-After"))
-                    except Exception:
-                        retry_after = None
-                    raise ProviderRateLimitError(message or "Rate Limited", retry_after_seconds=retry_after)
-            # Map a narrow 404 case to a ProviderModelNotFoundError. We only
-            # do this if the downstream body explicitly indicates an unknown
-            # model, to avoid conflating unrelated 404s.
-            if response.status_code == 404:
+
+            message = str(err.get("error") or err.get("message") or "")
+
+            if response.status_code == 401:
+                raise ProviderUnauthorizedError(message or "Unauthorized")
+            if response.status_code == 403:
+                raise ProviderForbiddenError(message or "Forbidden")
+            if response.status_code == 429:
+                retry_after = None
                 try:
-                    err = response.json()
+                    retry_after = int(response.headers.get("Retry-After"))
                 except Exception:
-                    err = {}
-                message = str(err.get("error") or err.get("message") or "")
-                # Common shapes seen across compat servers
-                lower_msg = message.lower()
-                if (
-                    any(
-                        key in lower_msg
-                        for key in ["model", "not found", "unknown model"]
-                    )
-                    and request.model.replace(" ", "") in lower_msg
-                ):
-                    raise ProviderModelNotFoundError(
-                        message or f"Model not found: {request.model}"
-                    )
-            response.raise_for_status()
+                    retry_after = None
+                raise ProviderRateLimitError(
+                    message or "Rate Limited",
+                    retry_after_seconds=retry_after,
+                )
+
+        # Map a narrow 404 case to a ProviderModelNotFoundError before raising.
+        if response.status_code == 404:
+            try:
+                err = response.json()
+            except Exception:
+                err = {}
+
+            message = str(err.get("error") or err.get("message") or "")
+            lower_msg = message.lower()
+            if (
+                any(key in lower_msg for key in ["model", "not found", "unknown model"])
+                and request.model.replace(" ", "") in lower_msg
+            ):
+                raise ProviderModelNotFoundError(
+                    message or f"Model not found: {request.model}"
+                )
+
+        response.raise_for_status()
+
+        try:
             data: Dict[str, Any] = response.json()
+        except Exception as exc:  # pragma: no cover - surface unexpected payloads
+            raise ProviderError("Compatible provider returned invalid JSON") from exc
 
         # Convert provider response into our response model.
         # We tolerate missing/empty `choices` by returning a single empty choice.
@@ -291,90 +303,98 @@ class OpenAICompatibleProvider(LLMProvider):
         if n is not None:
             payload["n"] = n
         # For streaming, set explicit connect + read timeouts; no total timeout
-        stream_connect = float(os.getenv("OPENAI_COMPAT_STREAM_CONNECT_TIMEOUT", "10") or 10)
-        stream_read = float(os.getenv("OPENAI_COMPAT_STREAM_READ_TIMEOUT", "120") or 120)
+        stream_connect = float(
+            os.getenv("OPENAI_COMPAT_STREAM_CONNECT_TIMEOUT", "10") or 10
+        )
+        stream_read = float(
+            os.getenv("OPENAI_COMPAT_STREAM_READ_TIMEOUT", "120") or 120
+        )
         async with self._client.stream(
-                "POST",
-                "/chat/completions",
-                headers=self._headers(authorization),
-                json=payload,
-                timeout=httpx.Timeout(connect=stream_connect, read=stream_read, write=None, pool=None),
-            ) as response:
-                if response.status_code in (401, 403, 429):
-                    # read body to extract message if available
+            "POST",
+            "/chat/completions",
+            headers=self._headers(authorization),
+            json=payload,
+            timeout=httpx.Timeout(
+                connect=stream_connect, read=stream_read, write=None, pool=None
+            ),
+        ) as response:
+            if response.status_code in (401, 403, 429):
+                # read body to extract message if available
+                try:
+                    text = await response.aread()
+                    data_str = text.decode("utf-8", errors="ignore")
+                    obj = json.loads(data_str)
+                except Exception:
+                    obj = {}
+                message = str(obj.get("error") or obj.get("message") or "")
+                if response.status_code == 401:
+                    raise ProviderUnauthorizedError(message or "Unauthorized")
+                if response.status_code == 403:
+                    raise ProviderForbiddenError(message or "Forbidden")
+                if response.status_code == 429:
+                    retry_after = None
+                    # httpx stream response may not expose headers; attempt to access
                     try:
-                        text = await response.aread()
-                        data_str = text.decode("utf-8", errors="ignore")
-                        obj = json.loads(data_str)
+                        retry_after = int(response.headers.get("Retry-After"))
                     except Exception:
-                        obj = {}
-                    message = str(obj.get("error") or obj.get("message") or "")
-                    if response.status_code == 401:
-                        raise ProviderUnauthorizedError(message or "Unauthorized")
-                    if response.status_code == 403:
-                        raise ProviderForbiddenError(message or "Forbidden")
-                    if response.status_code == 429:
                         retry_after = None
-                        # httpx stream response may not expose headers; attempt to access
-                        try:
-                            retry_after = int(response.headers.get("Retry-After"))
-                        except Exception:
-                            retry_after = None
-                        raise ProviderRateLimitError(message or "Rate Limited", retry_after_seconds=retry_after)
-                if response.status_code == 404:
-                    # Attempt to parse an explicit unknown-model message
-                    try:
-                        text = await response.aread()
-                        data_str = text.decode("utf-8", errors="ignore")
-                        obj = json.loads(data_str)
-                    except Exception:
-                        obj = {}
-                    message = str(obj.get("error") or obj.get("message") or "")
-                    lower_msg = message.lower()
-                    if (
-                        any(
-                            key in lower_msg
-                            for key in ["model", "not found", "unknown model"]
-                        )
-                        and request.model.replace(" ", "") in lower_msg
-                    ):
-                        raise ProviderModelNotFoundError(
-                            message or f"Model not found: {request.model}"
-                        )
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    # The stream typically emits a sequence of lines, many of which
-                    # are empty heartbeats. We skip empty lines early.
-                    if not line:
-                        continue
-                    # Compatible servers often send SSE frames prefixed with `data: `.
-                    # Normalize by stripping the prefix if present, so `data_str`
-                    # contains just the JSON payload.
-                    data_str = line
-                    if line.startswith("data: "):
-                        data_str = line[6:].strip()
-                    # The `[DONE]` sentinel indicates the server is finished.
-                    if data_str == "[DONE]":
-                        break
-                    # Parse the JSON payload. If a malformed line is encountered,
-                    # ignore it to preserve a resilient stream for clients.
-                    try:
-                        obj = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-                    # Standard OpenAI streaming payload shape includes a `choices`
-                    # array where each element may carry a `delta` with incremental
-                    # content. We currently stream only the first choice.
-                    choices = obj.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    content = delta.get("content")
-                    # Only yield when actual textual content is present. Other fields
-                    # such as role changes or tool calls would require additional
-                    # handling which we intentionally omit in this generic provider.
-                    if content:
-                        yield content
+                    raise ProviderRateLimitError(
+                        message or "Rate Limited", retry_after_seconds=retry_after
+                    )
+            if response.status_code == 404:
+                # Attempt to parse an explicit unknown-model message
+                try:
+                    text = await response.aread()
+                    data_str = text.decode("utf-8", errors="ignore")
+                    obj = json.loads(data_str)
+                except Exception:
+                    obj = {}
+                message = str(obj.get("error") or obj.get("message") or "")
+                lower_msg = message.lower()
+                if (
+                    any(
+                        key in lower_msg
+                        for key in ["model", "not found", "unknown model"]
+                    )
+                    and request.model.replace(" ", "") in lower_msg
+                ):
+                    raise ProviderModelNotFoundError(
+                        message or f"Model not found: {request.model}"
+                    )
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                # The stream typically emits a sequence of lines, many of which
+                # are empty heartbeats. We skip empty lines early.
+                if not line:
+                    continue
+                # Compatible servers often send SSE frames prefixed with `data: `.
+                # Normalize by stripping the prefix if present, so `data_str`
+                # contains just the JSON payload.
+                data_str = line
+                if line.startswith("data: "):
+                    data_str = line[6:].strip()
+                # The `[DONE]` sentinel indicates the server is finished.
+                if data_str == "[DONE]":
+                    break
+                # Parse the JSON payload. If a malformed line is encountered,
+                # ignore it to preserve a resilient stream for clients.
+                try:
+                    obj = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                # Standard OpenAI streaming payload shape includes a `choices`
+                # array where each element may carry a `delta` with incremental
+                # content. We currently stream only the first choice.
+                choices = obj.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                content = delta.get("content")
+                # Only yield when actual textual content is present. Other fields
+                # such as role changes or tool calls would require additional
+                # handling which we intentionally omit in this generic provider.
+                if content:
+                    yield content
 
     async def aclose(self) -> None:
         """Close the shared HTTP client."""
