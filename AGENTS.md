@@ -10,11 +10,14 @@ Preserve SOLID boundaries: depend on abstractions (interfaces for providers), ke
 
 ## Build, Test, and Development Commands
 
+- Always make sure that you run `source .venv/bin/activate` at the start of the session to make sure that you are working in a clean virtual environment.
 - `python3 -m venv .venv && source .venv/bin/activate` provisions the recommended virtualenv; install with `pip install -e . && pip install -r requirements-dev.txt`.
 - `uvicorn app.main:app --reload --env-file .env` runs the API locally with hot reload and typed env overrides.
 - `make test-lint` (or `./scripts/test_lint.sh`) formats with Black, sorts imports, runs Flake8, and executes pytest with coverage.
 - `make fmt`, `make lint`, and `make test` support targeted workflows; the `test` target wraps `pytest --cov=app --cov-report=term-missing`.
 - `docker build -t llm-proxy .` then `docker run --rm -p 8000:80 llm-proxy` validates containerization; mount a `.env` file to mirror production.
+- Make sure that the venv black is used and not the global one. If it's not working, use `python -m black` instead of raw `black`.
+- Lint/tests should be run with `make test-lint` (assumes venv is active).
 
 ## Coding Style & Naming Conventions
 

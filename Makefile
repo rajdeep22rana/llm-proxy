@@ -5,7 +5,7 @@ test-lint: fmt lint test
 
 # Auto-format code
 fmt:
-	black .
+	python -m black .
 
 # Lint code
 lint:

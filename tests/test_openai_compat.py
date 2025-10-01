@@ -2,6 +2,12 @@ import asyncio
 import types
 import pytest
 
+from app.providers.base import (
+    ProviderForbiddenError,
+    ProviderModelNotFoundError,
+    ProviderRateLimitError,
+    ProviderUnauthorizedError,
+)
 from app.providers.openai_compat import OpenAICompatibleProvider
 
 
@@ -65,13 +71,15 @@ class _FakeAsyncClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def post(self, path, headers=None, json=None):
+    async def post(self, path, headers=None, json=None, timeout=None, **kwargs):
         # capture last headers for assertions
         self.last_headers = headers or {}
+        self.last_timeout = timeout
         return self._next_response or _FakeResponse({})
 
-    def stream(self, method, path, headers=None, json=None):
+    def stream(self, method, path, headers=None, json=None, timeout=None, **kwargs):
         self.last_headers = headers or {}
+        self.last_stream_timeout = timeout
         return _FakeAsyncStreamContext(self._stream_lines or [], self._stream_error)
 
 
@@ -204,6 +212,86 @@ async def test_chat_raises_http_error(monkeypatch):
     )
     with pytest.raises(_HTTPError):
         await provider.chat(req, authorization="x")
+
+
+@pytest.mark.asyncio
+async def test_chat_maps_unauthorized(monkeypatch):
+    fake_client = _FakeAsyncClient()
+    fake_client._next_response = _FakeResponse(
+        {"error": "Unauthorized"}, status_code=401
+    )
+
+    monkeypatch.setattr(
+        "app.providers.openai_compat.httpx.AsyncClient", lambda *a, **k: fake_client
+    )
+
+    provider = OpenAICompatibleProvider()
+    req = types.SimpleNamespace(
+        model="m", messages=[types.SimpleNamespace(role="user", content="hi")]
+    )
+
+    with pytest.raises(ProviderUnauthorizedError):
+        await provider.chat(req, authorization="")
+
+
+@pytest.mark.asyncio
+async def test_chat_maps_forbidden(monkeypatch):
+    fake_client = _FakeAsyncClient()
+    fake_client._next_response = _FakeResponse(
+        {"message": "Forbidden"}, status_code=403
+    )
+
+    monkeypatch.setattr(
+        "app.providers.openai_compat.httpx.AsyncClient", lambda *a, **k: fake_client
+    )
+
+    provider = OpenAICompatibleProvider()
+    req = types.SimpleNamespace(
+        model="m", messages=[types.SimpleNamespace(role="user", content="hi")]
+    )
+
+    with pytest.raises(ProviderForbiddenError):
+        await provider.chat(req, authorization="")
+
+
+@pytest.mark.asyncio
+async def test_chat_maps_rate_limit(monkeypatch):
+    fake_client = _FakeAsyncClient()
+    fake_client._next_response = _FakeResponse(
+        {"message": "Too many requests"}, status_code=429
+    )
+
+    monkeypatch.setattr(
+        "app.providers.openai_compat.httpx.AsyncClient", lambda *a, **k: fake_client
+    )
+
+    provider = OpenAICompatibleProvider()
+    req = types.SimpleNamespace(
+        model="m", messages=[types.SimpleNamespace(role="user", content="hi")]
+    )
+
+    with pytest.raises(ProviderRateLimitError):
+        await provider.chat(req, authorization="")
+
+
+@pytest.mark.asyncio
+async def test_chat_maps_model_not_found(monkeypatch):
+    fake_client = _FakeAsyncClient()
+    fake_client._next_response = _FakeResponse(
+        {"message": "Model m not found"}, status_code=404
+    )
+
+    monkeypatch.setattr(
+        "app.providers.openai_compat.httpx.AsyncClient", lambda *a, **k: fake_client
+    )
+
+    provider = OpenAICompatibleProvider()
+    req = types.SimpleNamespace(
+        model="m", messages=[types.SimpleNamespace(role="user", content="hi")]
+    )
+
+    with pytest.raises(ProviderModelNotFoundError):
+        await provider.chat(req, authorization="")
 
 
 def test_base_url_from_env(monkeypatch):
